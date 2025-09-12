@@ -5,6 +5,9 @@ import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 import urllib.parse
+import csv
+import os
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -33,7 +36,7 @@ def generate_sample_data(num_samples=100000):
     # Common domains and paths
     domains = ["google", "facebook", "apple", "microsoft", "amazon", "netflix", "bankofamerica", "wellsfargo", "paypal"]
     paths = ["login", "signin", "account", "verify", "security", "update", "profile", "settings", "auth"]
-    random_words = ["secure", "official", "verification", "account", "signin", "login", "update", "service", "webmail"]
+    random_words = ["secure", "official", "verification", 'account', 'signin', 'login', 'update', 'service', 'webmail']
 
     urls = []
     labels = []
@@ -80,24 +83,51 @@ def preprocess_url(url):
 
     return ' '.join(tokens)
 
-# Save URLs to files
-def save_url_to_file(url, prediction):
-    filename = "phishing_urls.txt" if prediction == 'Phishing' else "legitimate_urls.txt"
-
-    # Check if URL already exists in the file
-    try:
+# Save URLs to a single CSV file
+def save_url_to_csv(url, prediction, confidence):
+    filename = "url_classifications.csv"
+    
+    # Check if file exists to determine if we need to write headers
+    file_exists = os.path.isfile(filename)
+    
+    # Get the next ID number
+    if file_exists:
+        # Read the last row to get the last ID
         with open(filename, 'r') as file:
-            existing_urls = file.read().splitlines()
-    except FileNotFoundError:
-        existing_urls = []
-
-    # Add URL if it's not already in the file
-    if url not in existing_urls:
-        with open(filename, 'a') as file:
-            file.write(url + '\n')
-        print(f"URL automatically saved to {filename}")
+            reader = csv.reader(file)
+            rows = list(reader)
+            if len(rows) > 1:  # If there are rows besides the header
+                last_id = int(rows[-1][0])  # First column is the ID
+                next_id = last_id + 1
+            else:
+                next_id = 1
     else:
-        print(f"URL already exists in {filename}")
+        next_id = 1
+    
+    # Open the file in append mode
+    with open(filename, 'a', newline='') as file:
+        writer = csv.writer(file)
+        
+        # Write header if file doesn't exist
+        if not file_exists:
+            writer.writerow(['ID', 'URL', 'Classification', 'Confidence', 'Date_Added'])
+        
+        # Check if URL already exists in the file
+        if file_exists:
+            with open(filename, 'r') as read_file:
+                reader = csv.reader(read_file)
+                # Skip the header row
+                next(reader, None)
+                existing_urls = [row[1] for row in reader if row]  # URL is in the second column
+        else:
+            existing_urls = []
+        
+        # Add URL if it's not already in the file
+        if url not in existing_urls:
+            writer.writerow([next_id, url, prediction, confidence, datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+            print(f"URL automatically saved to {filename} with ID {next_id}")
+        else:
+            print(f"URL already exists in {filename}")
 
 # Generate sample data
 print("Generating sample data...")
@@ -144,15 +174,18 @@ def predict_url(url):
     prediction = lgb_classifier.predict(embedding)
     probability = lgb_classifier.predict_proba(embedding)
 
-    # Automatically save the URL to the appropriate file
+    # Get prediction details
     pred_label = 'Phishing' if prediction[0] == 1 else 'Legitimate'
-    save_url_to_file(url, pred_label)
+    confidence = probability[0][prediction[0]]
+    
+    # Automatically save the URL to the CSV file
+    save_url_to_csv(url, pred_label, confidence)
 
     return {
         'url': url,
         'processed': processed,
         'prediction': pred_label,
-        'confidence': probability[0][prediction[0]]
+        'confidence': confidence
     }
 
 # Interactive URL testing
@@ -161,7 +194,7 @@ def interactive_testing():
     print("PHISHING URL DETECTOR")
     print("="*60)
     print("Enter URLs to check if they're phishing or legitimate")
-    print("URLs will be automatically saved to appropriate files")
+    print("URLs will be automatically saved to url_classifications.csv")
     print("Type 'quit' to exit the program")
     print("="*60)
 
