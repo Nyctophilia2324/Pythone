@@ -8,8 +8,7 @@ import urllib.parse
 import csv
 import os
 from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
+import pandas as pd
 
 # Create a synthetic dataset for demonstration
 def generate_sample_data(num_samples=100000):
@@ -144,9 +143,14 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 print("Generating embeddings...")
 embeddings = model.encode(processed_urls, show_progress_bar=True)
 
+# Convert embeddings to DataFrame with feature names
+feature_names = [f'feature_{i}' for i in range(embeddings.shape[1])]
+X = pd.DataFrame(embeddings, columns=feature_names)
+y = np.array(labels)
+
 # Split data into train and test sets
 X_train, X_test, y_train, y_test = train_test_split(
-    embeddings, labels, test_size=0.2, random_state=42, stratify=labels
+    X, y, test_size=0.2, random_state=42, stratify=y
 )
 
 # Train LightGBM classifier
@@ -171,8 +175,12 @@ print(classification_report(y_test, y_pred, target_names=['Legitimate', 'Phishin
 def predict_url(url):
     processed = preprocess_url(url)
     embedding = model.encode([processed])
-    prediction = lgb_classifier.predict(embedding)
-    probability = lgb_classifier.predict_proba(embedding)
+    
+    # Convert to DataFrame with the same feature names
+    embedding_df = pd.DataFrame(embedding, columns=feature_names)
+    
+    prediction = lgb_classifier.predict(embedding_df)
+    probability = lgb_classifier.predict_proba(embedding_df)
 
     # Get prediction details
     pred_label = 'Phishing' if prediction[0] == 1 else 'Legitimate'
